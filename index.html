@@ -1,0 +1,252 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Shelf configurator - Three.js starter</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600&family=JetBrains+Mono:wght@500;600&display=swap" rel="stylesheet">
+<style>
+  :root{
+    --bg:#070809; --panel:#111419; --fg:#f1f0ec; --muted:#8b9099;
+    --line:#232833; --field:#191d24;
+    --server:#2fb866; --preview:#e3a73c;
+  }
+  *{box-sizing:border-box}
+  html,body{margin:0;height:100%;background:var(--bg);color:var(--fg);
+    font-family:"IBM Plex Sans",system-ui,sans-serif;-webkit-font-smoothing:antialiased}
+  #app{display:grid;grid-template-columns:1fr 340px;height:100%}
+  #view{position:relative;min-width:0}
+  canvas{display:block}
+  #panel{background:var(--panel);border-left:1px solid var(--line);padding:26px 24px;overflow:auto}
+  h1{font-size:14px;font-weight:600;letter-spacing:.01em;margin:0 0 2px}
+  .lead{font-size:12.5px;color:var(--muted);line-height:1.5;margin:0 0 24px}
+  .row{margin:20px 0}
+  .row label{display:flex;justify-content:space-between;font-size:12px;color:var(--muted);margin-bottom:9px}
+  .row label b{font-family:"JetBrains Mono",monospace;color:var(--fg);font-weight:500}
+  input[type=range]{width:100%;accent-color:var(--fg);cursor:pointer}
+  .seg{display:flex;gap:6px}
+  .seg button{flex:1;cursor:pointer;border:1px solid var(--line);background:var(--field);
+    color:var(--muted);padding:9px 0;font:inherit;font-size:12px;border-radius:6px;
+    transition:border-color .18s,color .18s}
+  .seg button:hover{color:var(--fg)}
+  .seg button[aria-pressed=true]{border-color:var(--fg);color:var(--fg)}
+  .seg button:focus-visible{outline:2px solid var(--fg);outline-offset:2px}
+  .price{margin-top:26px;padding-top:20px;border-top:1px solid var(--line)}
+  .price .n{font-family:"JetBrains Mono",monospace;font-size:30px;font-weight:600;color:var(--preview)}
+  .price small{display:block;font-size:12px;color:var(--muted);line-height:1.5;margin-top:5px}
+  .quote{margin-top:16px;width:100%;cursor:pointer;border:0;background:var(--fg);color:#0a0a0a;
+    padding:12px;font:inherit;font-size:13px;font-weight:600;border-radius:7px}
+  .quote:focus-visible{outline:2px solid var(--server);outline-offset:2px}
+  .srv{margin-top:12px;font-size:12px;line-height:1.55;color:var(--muted);min-height:16px}
+  .srv b{font-family:"JetBrains Mono",monospace;color:var(--server)}
+  .foot{margin-top:26px;font-size:12px;color:var(--muted);line-height:1.6}
+  .foot a{color:var(--fg);text-decoration:none;border-bottom:1px solid var(--line)}
+  .foot a:hover{border-color:var(--fg)}
+  @media (max-width:760px){
+    #app{grid-template-columns:1fr;grid-template-rows:62vh auto}
+    #panel{border-left:0;border-top:1px solid var(--line)}
+  }
+</style>
+<script type="importmap">
+{ "imports": {
+  "three": "https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js",
+  "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.160.0/examples/jsm/",
+  "gsap": "https://cdn.jsdelivr.net/npm/gsap@3.12.5/index.js"
+} }
+</script>
+</head>
+<body>
+<div id="app">
+  <div id="view"></div>
+  <aside id="panel">
+    <h1>Shelf configurator</h1>
+    <p class="lead">A small Three.js starter. Configure the shelf, watch the price. The point is where that price is allowed to come from.</p>
+
+    <div class="row">
+      <label>Width <b id="wOut">90 cm</b></label>
+      <input id="w" type="range" min="60" max="240" step="10" value="90">
+    </div>
+    <div class="row">
+      <label>Shelves <b id="sOut">4</b></label>
+      <input id="s" type="range" min="2" max="8" step="1" value="4">
+    </div>
+    <div class="row">
+      <label>Finish</label>
+      <div class="seg" id="finish">
+        <button data-f="oak" aria-pressed="true">Oak</button>
+        <button data-f="walnut" aria-pressed="false">Walnut</button>
+        <button data-f="white" aria-pressed="false">White</button>
+      </div>
+    </div>
+
+    <div class="price">
+      <div class="n" id="price"></div>
+      <small>Preview price, figured out in the browser so the slider feels instant. Don't trust it. See the readme.</small>
+      <button class="quote" id="quote">Get a real quote</button>
+      <div class="srv" id="srv"></div>
+    </div>
+
+    <p class="foot">
+      Built by <a href="https://grodev.pl/en/custom-3d-configurator" target="_blank" rel="noopener">GroDev</a>.
+      I build these for a living. Need one for your own products?
+      <a href="https://grodev.pl/konfigurator-produktowy-3d" target="_blank" rel="noopener">grodev.pl</a>.
+    </p>
+  </aside>
+</div>
+
+<script type="module">
+import * as THREE from 'three';
+import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+import { RoomEnvironment } from 'three/addons/environments/RoomEnvironment.js';
+import gsap from 'gsap';
+
+const finishes = {
+  oak:    0xbf9358,
+  walnut: 0x5c3b29,
+  white:  0xeae8e3,
+};
+let cfg = { width: 90, shelves: 4, finish: 'oak' };
+
+const view = document.getElementById('view');
+const renderer = new THREE.WebGLRenderer({ antialias: true });
+renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
+renderer.toneMapping = THREE.ACESFilmicToneMapping;
+renderer.toneMappingExposure = 1.05;
+renderer.shadowMap.enabled = true;
+renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+view.appendChild(renderer.domElement);
+
+const scene = new THREE.Scene();
+scene.background = new THREE.Color(0x070809);
+
+// one pass of RoomEnvironment gives the wood something to reflect. cheap, looks miles better than flat lights.
+const pmrem = new THREE.PMREMGenerator(renderer);
+scene.environment = pmrem.fromScene(new RoomEnvironment(), 0.04).texture;
+
+const camera = new THREE.PerspectiveCamera(40, 1, 0.1, 100);
+camera.position.set(2.6, 1.7, 3.2);
+
+const controls = new OrbitControls(camera, renderer.domElement);
+controls.enableDamping = true;
+controls.target.set(0, 0.8, 0);
+controls.minDistance = 2.2;
+controls.maxDistance = 6.5;
+controls.maxPolarAngle = Math.PI / 1.9;
+
+const sun = new THREE.DirectionalLight(0xffffff, 1.1);
+sun.position.set(3, 6, 4);
+sun.castShadow = true;
+sun.shadow.mapSize.set(1024, 1024);
+sun.shadow.camera.top = sun.shadow.camera.right = 3;
+sun.shadow.camera.bottom = sun.shadow.camera.left = -3;
+scene.add(sun);
+
+// floor that only catches the shadow, nothing else
+const floor = new THREE.Mesh(
+  new THREE.PlaneGeometry(14, 14),
+  new THREE.ShadowMaterial({ opacity: 0.32 })
+);
+floor.rotation.x = -Math.PI / 2;
+floor.receiveShadow = true;
+scene.add(floor);
+
+const wood = new THREE.MeshStandardMaterial({ color: finishes.oak, roughness: 0.62, metalness: 0 });
+const shelf = new THREE.Group();
+scene.add(shelf);
+
+function build(animate) {
+  shelf.clear();
+  const w = cfg.width / 100, h = 1.6, d = 0.32, t = 0.03;
+  const parts = [];
+  const add = (sx, sy, sz, x, y, z) => {
+    const m = new THREE.Mesh(new THREE.BoxGeometry(sx, sy, sz), wood);
+    m.position.set(x, y, z);
+    m.castShadow = true;
+    shelf.add(m);
+    parts.push(m);
+  };
+  add(t, h, d, -w/2 + t/2, h/2, 0);
+  add(t, h, d,  w/2 - t/2, h/2, 0);
+  add(w, t, d, 0, h - t/2, 0);
+  add(w, t, d, 0, t/2, 0);
+  const gap = h / (cfg.shelves + 1);
+  for (let i = 1; i <= cfg.shelves; i++) add(w, t, d, 0, gap * i, 0);
+
+  if (animate && !reduced) {
+    gsap.from(parts.map(p => p.position), {
+      y: '-=0.15', duration: 0.5, ease: 'power3.out', stagger: 0.03,
+    });
+    gsap.from(parts.map(p => p.scale), { x: 0.92, z: 0.92, duration: 0.5, ease: 'power3.out', stagger: 0.03 });
+  }
+}
+
+// the browser is allowed to guess a price so the ui feels alive.
+// it is never the real one. price.php recomputes it on the server and that number wins.
+function guess() {
+  const mult = cfg.finish === 'walnut' ? 1.25 : cfg.finish === 'white' ? 1.1 : 1;
+  return Math.round((120 + 1.8 * cfg.width + 22 * cfg.shelves) * mult);
+}
+
+const priceEl = document.getElementById('price');
+function paintPrice() { priceEl.textContent = guess() + ' EUR'; }
+
+async function quote() {
+  const out = document.getElementById('srv');
+  out.textContent = 'checking with the server...';
+  try {
+    const r = await fetch('price.php', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(cfg),
+    });
+    if (!r.ok) throw 0;
+    const { price } = await r.json();
+    out.innerHTML = price === guess()
+      ? `server says <b>${price} EUR</b>. preview matched this time.`
+      : `server says <b>${price} EUR</b>. the preview was off, the server wins.`;
+  } catch {
+    out.innerHTML = 'no <b style="color:var(--preview)">price.php</b> running here. in production the number comes from the server, never the browser. serve the php file to see it answer.';
+  }
+}
+
+const wOut = document.getElementById('wOut'), sOut = document.getElementById('sOut');
+document.getElementById('w').addEventListener('input', e => {
+  cfg.width = +e.target.value; wOut.textContent = cfg.width + ' cm'; build(false); paintPrice();
+});
+document.getElementById('s').addEventListener('input', e => {
+  cfg.shelves = +e.target.value; sOut.textContent = cfg.shelves; build(false); paintPrice();
+});
+document.getElementById('finish').addEventListener('click', e => {
+  const btn = e.target.closest('button'); if (!btn) return;
+  cfg.finish = btn.dataset.f;
+  for (const b of e.currentTarget.children) b.setAttribute('aria-pressed', b === btn);
+  wood.color.setHex(finishes[cfg.finish]);
+  wood.roughness = cfg.finish === 'white' ? 0.5 : 0.62;
+  paintPrice();
+});
+document.getElementById('quote').addEventListener('click', quote);
+
+function resize() {
+  const w = view.clientWidth, h = view.clientHeight;
+  renderer.setSize(w, h, false);
+  camera.aspect = w / h;
+  camera.updateProjectionMatrix();
+}
+addEventListener('resize', resize);
+
+const reduced = matchMedia('(prefers-reduced-motion: reduce)').matches;
+build(true);
+paintPrice();
+resize();
+controls.autoRotate = !reduced;
+controls.autoRotateSpeed = 0.5;
+
+renderer.setAnimationLoop(() => {
+  controls.update();
+  renderer.render(scene, camera);
+});
+</script>
+</body>
+</html>
